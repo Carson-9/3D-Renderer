@@ -1,0 +1,321 @@
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Polygon;
+import java.awt.Toolkit;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.geom.Line2D;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.Scanner;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+
+
+public class WinUtilities {
+
+	public static class Vertex{
+		float x; float y; float z;
+		public Vertex(float x,float y,float z) {
+			this.x = x; this.y = y; this.z = z;
+		}
+	}
+	
+	public static Vertex Vector_Add(Vertex a, Vertex b) {
+		Vertex Add = new Vertex(0,0,0);
+		Add.x = a.x + b.x; 
+		Add.y = a.y + b.y;
+		Add.z = a.z + b.z;
+		return Add;
+	}
+	
+	public static Vertex Vector_Sub(Vertex b, Vertex a) {
+		Vertex Sub = new Vertex(0,0,0);
+		Sub.x = b.x - a.x; 
+		Sub.y = b.y - a.y;
+		Sub.z = b.z - a.z;
+		return Sub;
+	}
+	
+	public static Vertex Vector_Normalize(Vertex a) {
+		float scale = (float)Math.sqrt((a.x*a.x + a.y*a.y + a.z*a.z));
+		a.x /= scale; a.y /= scale; a.z /= scale;
+		return a;
+	}
+	
+	public static float Vector_Dot(Vertex a, Vertex b) {
+		return a.x*b.x + a.y*b.y + a.z*b.z;
+	}
+	
+	public static Vertex Vector_Cross(Vertex a, Vertex b) {
+		Vertex Cross = new Vertex(0,0,0);
+		Cross.x = a.y*b.z - a.z*b.y; 
+		Cross.y = a.z*b.x - a.x*b.z;
+		Cross.z = a.x*b.y - a.y*b.x;
+		return Cross;
+	}
+
+	
+	public static class tri{
+		Vertex a = new Vertex(0,0,0); Vertex b = new Vertex(0,0,0); Vertex c = new Vertex(0,0,0);
+		Vertex Normal = Vector_Cross(Vector_Sub(b,a),Vector_Sub(c,a));
+		Color color = new Color(255,255,255);
+		public tri(Vertex a, Vertex b, Vertex c) {
+			this.a = a; this.b = b; this.c = c;
+		}
+		
+		public void list() {
+			System.out.println(this.a + " " + this.b + " " + this.c +"\n");
+		}
+		public void setNormal(Vertex norm) {
+			this.Normal = norm;
+		}
+		public void setColor(int r, int g, int b) {
+			this.color = new Color(r,g,b);
+		}
+		
+	}
+	
+	public static class Matrix{
+		float[][] m = new float[4][4];
+		float fov = (float) Math.toRadians(90.0f);
+		float Znear = 0.1f; float Zfar = 1000f;
+		float angleX = 0.0f;float angleY = 0.0f;float angleZ = 0.0f;
+		public Matrix() {
+		}
+		public void modify(float a, int y, int x) {
+			m[y][x] = a;
+		}
+		public void changeDepth(float Zn, float Zf) {
+			this.Znear = Zn; this.Zfar = Zf;
+		}
+		public void makeProjection(Dimension dim) {
+			float aspectRatio = (float)(dim.getWidth()/dim.getHeight());
+			m = new float[][]{{aspectRatio * (float)(1/(Math.tan(fov/2))),0,0,0},{0,(float)(1/(Math.tan(fov/2))),0,0},{0,0, Zfar / (Zfar - Znear),1},{0,0,((-Zfar * Znear)/(Zfar - Znear)),0}};
+		}
+		public void makeRotX(float angleX) {
+			m = new float[][] {{1f,0,0,0},{0,(float)Math.cos(angleX),(float)Math.sin(angleX),0},{0,-(float)Math.sin(angleX),(float)Math.cos(angleX),0},{0,0,0,1f}};
+		}
+		public void makeRotY(float angleY) {
+			m = new float[][] {{(float)Math.cos(angleY),0,(float)Math.sin(angleY),0},{0,1f,0,0},{-(float)Math.sin(angleY),0,(float)Math.cos(angleY),0},{0,0,0,1f}};
+		}
+		public void makeRotZ(float angleZ) {
+			m = new float[][] {{(float)Math.cos(angleZ),(float)Math.sin(angleZ),0,0},{-(float)Math.sin(angleZ),(float)Math.cos(angleZ),0,0},{0,0,1f,0},{0,0,0,1f}};
+		}
+		public Vertex MatrixMultiply(Vertex v) {
+			float newX = v.x * m[0][0] + v.y * m[1][0] + v.z * m[2][0] + m[3][0]; 
+			float newY = v.x * m[0][1] + v.y * m[1][1] + v.z * m[2][1] + m[3][1]; 
+			float newZ = v.x * m[0][2] + v.y * m[1][2] + v.z * m[2][2] + m[3][2];
+	        float newW = v.x * m[0][3] + v.y * m[1][3] + v.z * m[2][3] + m[3][3];
+	        if (newW!=0){
+	            newX /= newW; newY /= newW; newZ /= newW;
+	        }
+			return new Vertex(newX,newY,newZ);
+		}
+	}
+	
+	public static class Drawer extends JPanel{
+		private static final long serialVersionUID = -5930096611050347846L;
+		private ArrayList<tri> mesh;
+		Dimension screen;
+		JFrame win;
+		boolean fill;
+		boolean RotationControl;
+		ArrayList<Vertex> lightSources;
+		public Drawer(ArrayList<tri> mesh, ArrayList<Vertex> lightSources,boolean fill,boolean RotationControl,Control Control) {
+			this.mesh = mesh;
+			this.win = new JFrame("3D Engine");
+			this.win.setSize(800,800);
+			Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+			this.screen = screen;
+			this.win.setVisible(true);
+			this.win.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+			this.win.add(this);
+			this.Redraw(this.mesh);
+			this.fill = fill;
+			this.lightSources = lightSources;
+			this.RotationControl = RotationControl;
+			
+			if (RotationControl) {
+		    	this.win.addKeyListener(new KeyListener() {
+			    	public void keyTyped(KeyEvent arg0) {	
+			    	}
+			    	public void keyPressed(KeyEvent arg1){
+						if (arg1.getKeyCode() == 65 ) {
+							Control.ZIncrease();
+						}
+						if (arg1.getKeyCode() == 90) {
+							Control.ZDecrease();
+						}
+						if (arg1.getKeyCode() == 39) {
+							Control.RotateY = -1f;
+						}
+						if (arg1.getKeyCode() == 38) {
+							Control.RotateX = 1f;
+						}
+						if (arg1.getKeyCode() == 37) {
+							Control.RotateY = 1f;
+						}
+						if (arg1.getKeyCode() == 40) {
+							Control.RotateX = -1f;
+						}
+					}
+					public void keyReleased(KeyEvent e) {
+						if (e.getKeyCode() == 39) {
+							Control.RotateY = 0f;
+						}
+						if (e.getKeyCode() == 38) {
+							Control.RotateX = 0f;
+						}
+						if (e.getKeyCode() == 37) {
+							Control.RotateY = 0f;
+						}
+						if (e.getKeyCode() == 40) {
+							Control.RotateX = 0f;
+						}
+					}
+			    });
+		    }
+		    else {
+		    	Control.RotateX = 0.2f; Control.RotateY = 0.2f; Control.RotateZ = 0.2f;
+		    }
+
+		}
+		
+		
+		public void paintComponent(Graphics g) {
+			super.paintComponent(g);
+			this.setBackground(Color.BLACK);
+			Graphics2D g2 = (Graphics2D) g;
+			g2.setStroke(new BasicStroke(1.0f));
+			for (tri triangle:this.mesh) {
+				if (this.fill) {
+					g2.setColor(Color.BLACK);	
+				}
+				else {
+					g2.setColor(Color.WHITE);
+				}
+				int[] XCoords = {(int)triangle.a.x,(int)triangle.b.x,(int)triangle.c.x};
+				int[] YCoords = {(int)triangle.a.y,(int)triangle.b.y,(int)triangle.c.y};
+				Polygon Tri = new Polygon(XCoords,YCoords,3);
+
+				g2.draw(new Line2D.Float(triangle.a.x,triangle.a.y,triangle.b.x,triangle.b.y));
+				g2.draw(new Line2D.Float(triangle.b.x,triangle.b.y,triangle.c.x,triangle.c.y));
+				g2.draw(new Line2D.Float(triangle.c.x,triangle.c.y,triangle.a.x,triangle.a.y));
+				
+				if(this.fill) {
+					Vertex triNormal = Vector_Normalize(triangle.Normal);
+					float biggestIllumination = 0.0f;
+					for(Vertex light:lightSources) {
+						light = Vector_Normalize(light);
+						float Percentage = Vector_Dot(triNormal,light);
+						if(Math.abs(Percentage) > biggestIllumination) {
+							biggestIllumination = Math.abs(Percentage);
+						}	
+					}
+					int newR = (int) (triangle.color.getRed() * biggestIllumination);
+					int newG = (int) (triangle.color.getGreen() * biggestIllumination);
+					int newB = (int) (triangle.color.getBlue() * biggestIllumination);
+					g2.setColor(new Color(newR,newG,newB));
+					g.fillPolygon(Tri);
+				}
+			}
+		}
+		
+		public void Redraw(ArrayList<tri> NewMesh) {
+			this.mesh = NewMesh;
+			this.repaint();
+		}
+	}
+	
+	public static tri Scale(tri tris,Drawer dim,boolean isStretched){
+			
+		float aspectRatio = (float)dim.getWidth() / (float)dim.getHeight(); 
+
+		tris.a = Vector_Add(tris.a, new Vertex(1.0f,1.0f,0.0f));
+		tris.b = Vector_Add(tris.b, new Vertex(1.0f,1.0f,0.0f));
+		tris.c = Vector_Add(tris.c, new Vertex(1.0f,1.0f,0.0f));
+		    
+		tris.a.x *= 0.5f * (float)dim.getHeight();
+		tris.a.y *= 0.5f * (float)dim.getHeight();
+		tris.b.x *= 0.5f * (float)dim.getHeight();
+		tris.b.y *= 0.5f * (float)dim.getHeight();
+		tris.c.x *= 0.5f * (float)dim.getHeight();
+		tris.c.y *= 0.5f * (float)dim.getHeight();
+		  	
+		if (isStretched) {
+			tris.a.x *= aspectRatio;
+		  	tris.b.x *= aspectRatio;
+		  	tris.c.x *= aspectRatio;
+			}
+		return new tri(tris.a,tris.b,tris.c);
+		}
+	
+	public static class Control{
+		float Zoff;
+		float RotateX = 0f;float RotateY = 0f;float RotateZ = 0f;
+
+		public Control(float Z) {
+			this.Zoff = Z;
+		}
+		
+		public void ZIncrease() {
+			this.Zoff +=1 ;
+		}
+		public void ZDecrease() {
+			this.Zoff -=1 ;
+		}
+		
+	}
+	
+	public static ArrayList<tri> OBJFile(String file) {
+		try {
+		Scanner a = new Scanner(new File(file));
+		ArrayList<Vertex> Vertexs = new ArrayList<Vertex>();
+		ArrayList<tri> mesh = new ArrayList<tri>();
+		while (a.hasNextLine()) {
+			String line = a.nextLine();
+			if (line.isEmpty()) {
+				
+			}
+			else {
+			if (line.indexOf("  ") != -1) {
+				line = line.replaceAll("  ", " ");
+			}
+			
+			if (line.charAt(0) == 'v') {
+				System.out.println(line);
+				String[] sub = line.split(" ");
+				if (sub[0].equals("v")) {
+					Vertex vert = new Vertex(0,0,0);
+					vert.x = Float.parseFloat(sub[1]);
+					vert.y = Float.parseFloat(sub[2]);
+					vert.z = Float.parseFloat(sub[3]);
+					Vertexs.add(vert);	
+					}
+				}	
+			if (line.charAt(0) == 'f') {
+				System.out.println(line);
+				String[] sub = line.split(" ");
+				int vert1 = Integer.parseInt(sub[1]);
+				int vert2 = Integer.parseInt(sub[2]);
+				int vert3 = Integer.parseInt(sub[3]);
+				mesh.add(new tri(Vertexs.get(vert1-1),Vertexs.get(vert2-1),Vertexs.get(vert3-1)));
+				}
+			}
+		}
+		
+		return mesh;
+		}
+		catch(FileNotFoundException e) {
+			System.out.println("File : " + file + " not found");
+			return new ArrayList<tri>();
+		}
+	}
+	
+}
+

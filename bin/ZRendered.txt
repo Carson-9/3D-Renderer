@@ -1,0 +1,74 @@
+import java.time.Duration;
+import java.time.Instant;
+import java.awt.Dimension;
+import java.awt.Toolkit;
+import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
+
+
+
+public class Renderer extends WinUtilities{
+	
+	public static void main(String[] args) throws InterruptedException {
+		
+		// INIT Camera, DeltaTime, Lights, Screen, Controls, Mesh to draw.
+		
+		Duration deltaTime = Duration.ZERO;
+		Vertex Cam = new Vertex(0,0,0);
+		ArrayList<Vertex> lightSources = new ArrayList<Vertex>();
+		lightSources.add(new Vertex(0,0,-1));
+		Control Control = new Control(10.0f);
+		Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+		
+		String currentPath = System.getProperty("user.dir");
+		currentPath += "\\objects\\lamp.txt" ;
+		ArrayList<tri> Mesh = OBJFile(currentPath);
+		System.out.println(currentPath);
+		
+		Drawer Window = new Drawer(Mesh,lightSources,true,true,Control);
+		
+		Matrix Projection = new Matrix();
+		Projection.makeProjection(screen);
+		Matrix RotXMatrix = new Matrix(); Matrix RotYMatrix = new Matrix(); Matrix RotZMatrix = new Matrix();
+		
+		while(true) {
+			Instant beginTime = Instant.now();
+			float RotationX = 0f;float RotationY = 0f;float RotationZ = 0f;
+			RotationX +=  (0.005f * Control.RotateX);
+			RotationY +=  (0.005f * Control.RotateY);
+			RotationZ +=  (0.005f * Control.RotateZ);
+			
+			// Modify Rotation Matrix X,Y,Z
+			
+			RotXMatrix.makeRotX(RotationX); RotYMatrix.makeRotY(RotationY); RotZMatrix.makeRotZ(RotationZ);
+			ArrayList<tri> NewMesh = new ArrayList<tri>();
+			for(tri tri:Mesh) {
+				
+				// Rotation X,Y,Z
+				
+				tri RotX = new tri(RotXMatrix.MatrixMultiply(tri.a),RotXMatrix.MatrixMultiply(tri.b),RotXMatrix.MatrixMultiply(tri.c));
+				tri RotXY = new tri(RotXMatrix.MatrixMultiply(RotX.a),RotXMatrix.MatrixMultiply(RotX.b),RotXMatrix.MatrixMultiply(RotX.c));
+				tri RotXYZ = new tri(RotXMatrix.MatrixMultiply(RotXY.a),RotXMatrix.MatrixMultiply(RotXY.b),RotXMatrix.MatrixMultiply(RotXY.c));
+				
+				// Add Z offset
+				
+				RotXYZ.a.z += Control.Zoff;RotXYZ.b.z += Control.Zoff;RotXYZ.c.z += Control.Zoff;
+				Vertex Normal = Vector_Normalize(Vector_Cross(Vector_Sub(RotXYZ.b,RotXYZ.a),Vector_Sub(RotXYZ.c,RotXYZ.a)));
+				Vertex T = Vector_Sub(RotXYZ.a,Cam);
+				
+				// if Angle between Triangle Normal and Camera < 90° : Add the triangle to the Draw Mesh
+				
+				if(Vector_Dot(T,Normal) < 0.0f) {	
+					NewMesh.add(Scale(new tri(Projection.MatrixMultiply(RotXYZ.a),Projection.MatrixMultiply(RotXYZ.b),Projection.MatrixMultiply(RotXYZ.c)),Window,true));
+				}
+			}
+			Window.Redraw(NewMesh);
+			TimeUnit.NANOSECONDS.sleep(deltaTime.getNano()/5);
+			deltaTime = Duration.between(beginTime, Instant.now());
+		}
+		
+	}
+	
+	
+	
+}
